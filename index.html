@@ -84,6 +84,26 @@
             .month-cards{grid-template-columns:repeat(2,1fr);} .kpi-row{grid-template-columns:1fr;}
             .hero h1{font-size:26px;}
         }
+    
+@media print {
+    nav, .btn-row, .mselector, #popContent, .pov, .popup, footer { display: none !important; }
+    body { background: #fff !important; color: #000 !important; font-size: 11px; }
+    section, main { padding: 10px !important; background: #fff !important; }
+    .chart-wrap, .tbl-wrap, .stat-card, .kpi, .mc {
+        background: #f9f9f9 !important; border: 1px solid #ccc !important;
+        break-inside: avoid; page-break-inside: avoid;
+    }
+    table { font-size: 10px; }
+    th { background: #e5e7eb !important; color: #000 !important; }
+    td { color: #000 !important; }
+    h2 { font-size: 14px !important; }
+    .slbl { color: #555 !important; }
+    .stat-val, .kpi-val { color: #1d4ed8 !important; }
+    svg text { fill: #333 !important; }
+    line[stroke="#1b2e4a"] { stroke: #ddd !important; }
+    @page { size: A4 landscape; margin: 15mm; }
+}
+
     </style>
 </head>
 <body>
@@ -836,6 +856,176 @@ function buildAcdm() {
 }
 
 buildAcdm();
+
+// ====== EXPORT FUNCTIONS ======
+
+// ── CSV ─────────────────────────────────────────────────────────────────────
+function downloadCSV(content, filename) {
+    const bom = '\uFEFF'; // UTF-8 BOM for Thai chars in Excel
+    const blob = new Blob([bom + content], {type:'text/csv;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download=filename;
+    a.click(); URL.revokeObjectURL(url);
+}
+
+function exportKpiCSV() {
+    const rows = [
+        ['รายงาน A-CDM KPI — สนามบินสุวรรณภูมิ มกราคม–พฤษภาคม 2026'],
+        [],
+        ['=== ตาราง KPI รายเดือน ==='],
+        ['เดือน','เที่ยวบิน','TSAT On-time ±3min (%)','TSAT Compliance ±2min (%)','TSAT Compliance ±5min (%)','TOBT Accuracy ±5min (%)','Taxi เฉลี่ย (นาที)','Taxi ≤18min (%)','P50 TSAT-TOBT (นาที)','P90 TSAT-TOBT (นาที)'],
+    ];
+    MONTHS.forEach(m => {
+        const k = KPI[m];
+        rows.push([m, k.total, k.tsat_bands_pct.on_time, k.compliance.within_2min,
+            k.compliance.within_5min, k.tobt_accuracy.within_5min,
+            k.taxi.avg, k.taxi.within_target, k.percentiles.p50, k.percentiles.p90]);
+    });
+    rows.push([]);
+    rows.push(['=== TSAT-TOBT Distribution (%) ===']);
+    rows.push(['เดือน','Very Early <-10min','Early -10~-3min','On-time ±3min','Late 3~10min','Very Late 10~20min','Extreme >20min']);
+    MONTHS.forEach(m => {
+        const b = KPI[m].tsat_bands_pct;
+        rows.push([m, b.very_early, b.early, b.on_time, b.late, b.very_late, b.extreme_late]);
+    });
+    rows.push([]);
+    rows.push(['=== AOBT-TSAT Compliance Distribution (%) ===']);
+    rows.push(['เดือน','Early <-2min','On-time -2~5min','Late 5~15min','Very Late >15min','เฉลี่ย (นาที)']);
+    MONTHS.forEach(m => {
+        const c = KPI[m].compliance;
+        const tot = c.total || 1;
+        rows.push([m,
+            +(c.early/tot*100).toFixed(1), +(c.on_time/tot*100).toFixed(1),
+            +(c.late_5_15/tot*100).toFixed(1), +(c.late_15p/tot*100).toFixed(1), c.avg]);
+    });
+    rows.push([]);
+    rows.push(['=== Taxi Time Distribution (%) ===']);
+    rows.push(['เดือน','<12 min','12-15 min','15-18 min','18-22 min','>22 min','เฉลี่ย (นาที)']);
+    MONTHS.forEach(m => {
+        const t = KPI[m].taxi; const tot = t.total || 1;
+        rows.push([m,
+            +(t.bands.under_12/tot*100).toFixed(1), +(t.bands['12_to_15']/tot*100).toFixed(1),
+            +(t.bands['15_to_18']/tot*100).toFixed(1), +(t.bands['18_to_22']/tot*100).toFixed(1),
+            +(t.bands.over_22/tot*100).toFixed(1), t.avg]);
+    });
+    rows.push([]);
+    rows.push(['=== TSAT-TOBT รายชั่วโมง (ค่าเฉลี่ย นาที) ===']);
+    const hdr = ['ชั่วโมง', ...MONTHS];
+    rows.push(hdr);
+    for (let h=0; h<24; h++) {
+        rows.push([h+':00', ...MONTHS.map(m => DATA[m].hourly_tsat_tobt[h].toFixed(2))]);
+    }
+    rows.push([]);
+    rows.push(['=== AOBT-TSAT รายชั่วโมง (ค่าเฉลี่ย นาที) ===']);
+    rows.push(hdr);
+    for (let h=0; h<24; h++) {
+        rows.push([h+':00', ...MONTHS.map(m => DATA[m].hourly_aobt_tsat[h].toFixed(2))]);
+    }
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    downloadCSV(csv, 'ACDM_KPI_Suvarnabhumi_2026.csv');
+}
+
+function exportHourlyCSV() {
+    const rows = [
+        ['รายงานข้อมูลรายชั่วโมง — TOBT vs TSAT Dashboard'],
+        [],
+        ['ชั่วโมง', ...MONTHS.map(m=>'TSAT-TOBT '+m), ...MONTHS.map(m=>'AOBT-TSAT '+m), ...MONTHS.map(m=>'Taxi '+m), 'เฉลี่ย TSAT-TOBT', 'ระดับ'],
+    ];
+    for (let h=0; h<24; h++) {
+        const avg = MONTHS.reduce((s,m)=>s+DATA[m].hourly_tsat_tobt[h],0)/5;
+        const lvl = avg>10?'ล่าช้า':avg>3?'ปกติ':'ดี';
+        rows.push([h+':00',
+            ...MONTHS.map(m=>DATA[m].hourly_tsat_tobt[h].toFixed(2)),
+            ...MONTHS.map(m=>DATA[m].hourly_aobt_tsat[h].toFixed(2)),
+            ...MONTHS.map(m=>(DATA[m].hourly_atot_aobt?DATA[m].hourly_atot_aobt[h].toFixed(2):'-')),
+            avg.toFixed(2), lvl
+        ]);
+    }
+    const csv = rows.map(r => r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    downloadCSV(csv, 'Hourly_Data_Suvarnabhumi_2026.csv');
+}
+
+// ── HTML-to-Excel (XML Spreadsheet 2003) ───────────────────────────────────
+function exportExcel() {
+    const months = MONTHS;
+    // Build XML SpreadsheetML
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<Styles>
+ <Style ss:ID="H"><Font ss:Bold="1"/><Interior ss:Color="#101e35" ss:Pattern="Solid"/><Font ss:Color="#6366f1" ss:Bold="1"/></Style>
+ <Style ss:ID="G"><Font ss:Color="#10b981" ss:Bold="1"/></Style>
+ <Style ss:ID="Y"><Font ss:Color="#f59e0b" ss:Bold="1"/></Style>
+ <Style ss:ID="R"><Font ss:Color="#ef4444" ss:Bold="1"/></Style>
+ <Style ss:ID="B"><Font ss:Bold="1"/></Style>
+</Styles>`;
+
+    // Sheet 1: KPI Summary
+    xml += `<Worksheet ss:Name="A-CDM KPI Summary"><Table>`;
+    const addRow = (cells) => {
+        xml += '<Row>' + cells.map(([v,sid])=>`<Cell${sid?` ss:StyleID="${sid}"`:''}><Data ss:Type="${typeof v==='number'?'Number':'String'}">${v}</Data></Cell>`).join('') + '</Row>';
+    };
+    addRow([['A-CDM KPI Dashboard — สนามบินสุวรรณภูมิ 2026','B']]);
+    addRow([['']]);
+    addRow([['เดือน','H'],['เที่ยวบิน','H'],['TSAT On-time ±3min (%)','H'],['TSAT Compliance ±2min (%)','H'],['TSAT Compliance ±5min (%)','H'],['TOBT Accuracy ±5min (%)','H'],['Taxi เฉลี่ย (นาที)','H'],['Taxi ≤18min (%)','H'],['P50','H'],['P90','H']]);
+    months.forEach(m => {
+        const k = KPI[m];
+        const tCol = k.tsat_bands_pct.on_time>=50?'G':k.tsat_bands_pct.on_time>=40?'Y':'R';
+        const cCol = k.compliance.within_2min>=35?'G':k.compliance.within_2min>=25?'Y':'R';
+        const aCol = k.tobt_accuracy.within_5min>=50?'G':k.tobt_accuracy.within_5min>=40?'Y':'R';
+        addRow([[m,'B'],[k.total,''],[k.tsat_bands_pct.on_time,tCol],[k.compliance.within_2min,cCol],[k.compliance.within_5min,''],[k.tobt_accuracy.within_5min,aCol],[k.taxi.avg,''],[k.taxi.within_target,''],[k.percentiles.p50,''],[k.percentiles.p90,'']]);
+    });
+    xml += `</Table></Worksheet>`;
+
+    // Sheet 2: Hourly
+    xml += `<Worksheet ss:Name="รายชั่วโมง"><Table>`;
+    addRow([['ชั่วโมง','H'],...months.map(m=>['TSAT-TOBT '+m,'H']),...months.map(m=>['AOBT-TSAT '+m,'H'])]);
+    for(let h=0;h<24;h++){
+        addRow([[h+':00','B'],...months.map(m=>[+DATA[m].hourly_tsat_tobt[h].toFixed(2),'']), ...months.map(m=>[+DATA[m].hourly_aobt_tsat[h].toFixed(2),''])]);
+    }
+    xml += `</Table></Worksheet>`;
+
+    // Sheet 3: TSAT Distribution
+    xml += `<Worksheet ss:Name="TSAT Distribution"><Table>`;
+    addRow([['เดือน','H'],['Very Early <-10','H'],['Early -10~-3','H'],['On-time ±3','H'],['Late 3~10','H'],['Very Late 10~20','H'],['Extreme >20','H']]);
+    months.forEach(m => {
+        const b = KPI[m].tsat_bands_pct;
+        addRow([[m,'B'],[b.very_early,''],[b.early,''],[b.on_time,'G'],[b.late,''],[b.very_late,'Y'],[b.extreme_late,'R']]);
+    });
+    xml += `</Table></Worksheet>`;
+
+    xml += `</Workbook>`;
+
+    const blob = new Blob(['\uFEFF'+xml], {type:'application/vnd.ms-excel;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download='ACDM_KPI_Suvarnabhumi_2026.xls';
+    a.click(); URL.revokeObjectURL(url);
+}
+
+// ── Print / PDF ──────────────────────────────────────────────────────────────
+function printReport() {
+    window.print();
+}
+
 </script>
+
+<div id="exportBar" style="position:fixed;bottom:24px;right:24px;z-index:1500;display:flex;flex-direction:column;gap:8px;align-items:flex-end;">
+    <div id="exportMenu" style="display:none;flex-direction:column;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;box-shadow:0 8px 32px rgba(0,0,0,0.5);min-width:200px;">
+        <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">Export ข้อมูล</div>
+        <button onclick="exportKpiCSV()" style="background:#059669;color:#fff;border:none;border-radius:6px;padding:9px 14px;cursor:pointer;font-size:13px;font-weight:600;text-align:left;">📊 KPI Summary (.csv)</button>
+        <button onclick="exportHourlyCSV()" style="background:#0284c7;color:#fff;border:none;border-radius:6px;padding:9px 14px;cursor:pointer;font-size:13px;font-weight:600;text-align:left;">🕐 ข้อมูลรายชั่วโมง (.csv)</button>
+        <button onclick="exportExcel()" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:9px 14px;cursor:pointer;font-size:13px;font-weight:600;text-align:left;">📗 KPI + Hourly (.xls)</button>
+        <hr style="border:none;border-top:1px solid var(--border);margin:4px 0;"/>
+        <button onclick="printReport()" style="background:#6366f1;color:#fff;border:none;border-radius:6px;padding:9px 14px;cursor:pointer;font-size:13px;font-weight:600;text-align:left;">🖨️ พิมพ์ / Export PDF</button>
+    </div>
+    <button onclick="document.getElementById('exportMenu').style.display=document.getElementById('exportMenu').style.display==='none'?'flex':'none'" 
+        style="background:#6366f1;color:#fff;border:none;border-radius:50px;padding:12px 20px;cursor:pointer;font-size:14px;font-weight:700;box-shadow:0 4px 20px rgba(99,102,241,0.5);white-space:nowrap;">
+        ⬇ Export
+    </button>
+</div>
+
 </body>
 </html>
