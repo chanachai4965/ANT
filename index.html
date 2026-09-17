@@ -282,9 +282,7 @@
         }
 
         .export-button {
-            position: fixed;
-            bottom: 30px;
-            right: 30px;
+            display: block;
             width: 60px;
             height: 60px;
             background: var(--primary);
@@ -294,7 +292,6 @@
             font-size: 24px;
             cursor: pointer;
             box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
-            z-index: 999;
             transition: all 0.3s;
         }
 
@@ -303,15 +300,22 @@
             box-shadow: 0 6px 30px rgba(99, 102, 241, 0.6);
         }
 
+        .export-wrapper {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            z-index: 999;
+        }
+
         .export-menu {
             position: absolute;
-            bottom: 80px;
+            bottom: 70px;
             right: 0;
             background: var(--card);
             border: 1px solid var(--border);
             border-radius: 8px;
             overflow: hidden;
-            min-width: 200px;
+            min-width: 220px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
             display: none;
         }
@@ -360,7 +364,7 @@
             nav { display: none; }
             main { margin-top: 0; }
             section { page-break-after: always; padding: 20px; }
-            .export-button { display: none; }
+            .export-wrapper { display: none; }
             .chart-container { page-break-inside: avoid; }
             table { page-break-inside: avoid; }
         }
@@ -660,12 +664,14 @@
     </div>
 
     <!-- Export Button -->
-    <button class="export-button" onclick="toggleExportMenu()">↓</button>
-    <div class="export-menu" id="exportMenu">
-        <div class="export-item" onclick="exportKpiCSV()">Export KPI CSV</div>
-        <div class="export-item" onclick="exportHourlyCSV()">Export Hourly CSV</div>
-        <div class="export-item" onclick="exportExcel()">Export Excel</div>
-        <div class="export-item" onclick="printReport()">Print Report</div>
+    <div class="export-wrapper">
+        <div class="export-menu" id="exportMenu">
+            <div class="export-item" onclick="exportKpiCSV()">📊 Export KPI CSV</div>
+            <div class="export-item" onclick="exportHourlyCSV()">🕐 Export Hourly CSV</div>
+            <div class="export-item" onclick="exportExcel()">📁 Export Excel (.xls)</div>
+            <div class="export-item" onclick="printReport()">🖨️ Print / Save PDF</div>
+        </div>
+        <button class="export-button" onclick="toggleExportMenu()" title="Export Data">⬇</button>
     </div>
 
     <script>
@@ -1580,67 +1586,140 @@ const TOP_BAYS = [{"name":"F2   ","total":2350,"overall_mean":13.87,"by_month":{
             document.getElementById('exportMenu').classList.toggle('active');
         }
 
+        /* ── Unified download helper ── */
+        function triggerDownload(content, filename, mime) {
+            try {
+                const blob = new Blob([content], {type: mime});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a); }, 300);
+            } catch(e) {
+                // Fallback: data URI
+                const encoded = encodeURIComponent(content);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = 'data:' + mime + ';charset=utf-8,' + encoded;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => document.body.removeChild(a), 300);
+            }
+        }
+
         function exportKpiCSV() {
-            let csv = 'Month,Total Flights,Avg TSAT-TOBT,Avg AOBT-TSAT,Avg Total Taxi,Ontime %,Early %,Delayed %\n';
+            const BOM = '\uFEFF';
+            let csv = BOM + 'เดือน,จำนวนเที่ยวบิน,เฉลี่ย TSAT-TOBT (นาที),เฉลี่ย AOBT-TSAT (นาที),เฉลี่ย Total Taxi (นาที),On-time %,Early %,Delayed %\n';
             MONTH_EN.forEach((m, i) => {
                 const d = DATA[m];
                 csv += `${MONTH_TH[i]},${d.total},${d.avg_tsat_tobt.toFixed(2)},${d.avg_aobt_tsat.toFixed(2)},${d.avg_atot_aobt.toFixed(2)},${d.bell_ontime_pct.toFixed(2)},${d.bell_early_pct.toFixed(2)},${d.bell_delayed_pct.toFixed(2)}\n`;
             });
-            downloadCSV(csv, 'kpi_data.csv');
+            triggerDownload(csv, 'kpi_data.csv', 'text/csv;charset=utf-8');
         }
 
         function exportHourlyCSV() {
-            let csv = 'Hour,' + MONTH_EN.map((m, i) => MONTH_TH[i] + '_TSAT_TOBT').join(',') + ',' + MONTH_EN.map((m, i) => MONTH_TH[i] + '_AOBT_TSAT').join(',') + ',' + MONTH_EN.map((m, i) => MONTH_TH[i] + '_Total_Taxi').join(',') + ',' + MONTH_EN.map((m, i) => MONTH_TH[i] + '_Count').join(',') + '\n';
-            
+            const BOM = '\uFEFF';
+            let csv = BOM + 'ชั่วโมง,' +
+                MONTH_EN.map((m, i) => MONTH_TH[i] + '_TSAT-TOBT(นาที)').join(',') + ',' +
+                MONTH_EN.map((m, i) => MONTH_TH[i] + '_AOBT-TSAT(นาที)').join(',') + ',' +
+                MONTH_EN.map((m, i) => MONTH_TH[i] + '_Total_Taxi(นาที)').join(',') + ',' +
+                MONTH_EN.map((m, i) => MONTH_TH[i] + '_จำนวนเที่ยวบิน').join(',') + '\n';
             for (let h = 0; h < 24; h++) {
-                csv += h.toString().padStart(2, '0');
-                MONTH_EN.forEach(m => {
-                    csv += ',' + DATA[m].hourly_tsat_tobt[h].toFixed(2);
-                });
-                MONTH_EN.forEach(m => {
-                    csv += ',' + DATA[m].hourly_aobt_tsat[h].toFixed(2);
-                });
-                MONTH_EN.forEach(m => {
-                    csv += ',' + DATA[m].hourly_atot_aobt[h].toFixed(2);
-                });
-                MONTH_EN.forEach(m => {
-                    csv += ',' + DATA[m].hourly_count[h];
-                });
+                csv += h.toString().padStart(2, '0') + ':00';
+                MONTH_EN.forEach(m => { csv += ',' + DATA[m].hourly_tsat_tobt[h].toFixed(2); });
+                MONTH_EN.forEach(m => { csv += ',' + DATA[m].hourly_aobt_tsat[h].toFixed(2); });
+                MONTH_EN.forEach(m => { csv += ',' + DATA[m].hourly_atot_aobt[h].toFixed(2); });
+                MONTH_EN.forEach(m => { csv += ',' + DATA[m].hourly_count[h]; });
                 csv += '\n';
             }
-            downloadCSV(csv, 'hourly_data.csv');
+            triggerDownload(csv, 'hourly_data.csv', 'text/csv;charset=utf-8');
         }
 
+        /* Legacy alias */
         function downloadCSV(csv, filename) {
-            const blob = new Blob([csv], {type: 'text/csv'});
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            a.click();
-            window.URL.revokeObjectURL(url);
+            triggerDownload('\uFEFF' + csv, filename, 'text/csv;charset=utf-8');
         }
 
         function exportExcel() {
-            let xml = `<?xml version="1.0" encoding="UTF-8"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-<Worksheet ss:Name="KPI">
-<Table>
-<Row><Cell><Data ss:Type="String">Month</Data></Cell><Cell><Data ss:Type="String">Total Flights</Data></Cell><Cell><Data ss:Type="String">Avg TSAT-TOBT</Data></Cell><Cell><Data ss:Type="String">Ontime %</Data></Cell></Row>`;
-            
+            // Use HTML-table format — Excel opens .xls HTML tables reliably across all browsers
+            let h = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
+<head><meta charset="UTF-8">
+<style>
+  th{background:#1a3a5c;color:#fff;padding:6px 10px;border:1px solid #aaa;}
+  td{padding:5px 9px;border:1px solid #ccc;}
+  .num{text-align:right;}
+  h2{font-family:Arial;color:#1a3a5c;}
+</style></head><body>`;
+
+            /* Sheet 1 — Monthly KPI */
+            h += `<h2>สรุป KPI รายเดือน (A-CDM)</h2>
+<table>
+<tr>
+  <th>เดือน</th><th>จำนวนเที่ยวบิน</th>
+  <th>เฉลี่ย TSAT-TOBT (นาที)</th>
+  <th>เฉลี่ย AOBT-TSAT (นาที)</th>
+  <th>เฉลี่ย Total Taxi (นาที)</th>
+  <th>On-time % (±5 นาที)</th>
+  <th>Early Pushback %</th>
+  <th>Delayed Pushback %</th>
+</tr>`;
             MONTH_EN.forEach((m, i) => {
                 const d = DATA[m];
-                xml += `<Row><Cell><Data ss:Type="String">${MONTH_TH[i]}</Data></Cell><Cell><Data ss:Type="Number">${d.total}</Data></Cell><Cell><Data ss:Type="Number">${d.avg_tsat_tobt.toFixed(2)}</Data></Cell><Cell><Data ss:Type="Number">${d.bell_ontime_pct.toFixed(2)}</Data></Cell></Row>`;
+                h += `<tr>
+  <td>${MONTH_TH[i]}</td>
+  <td class="num">${d.total}</td>
+  <td class="num">${d.avg_tsat_tobt.toFixed(2)}</td>
+  <td class="num">${d.avg_aobt_tsat.toFixed(2)}</td>
+  <td class="num">${d.avg_atot_aobt.toFixed(2)}</td>
+  <td class="num">${d.bell_ontime_pct.toFixed(2)}</td>
+  <td class="num">${d.bell_early_pct.toFixed(2)}</td>
+  <td class="num">${d.bell_delayed_pct.toFixed(2)}</td>
+</tr>`;
             });
-            
-            xml += `</Table></Worksheet></Workbook>`;
-            const blob = new Blob([xml], {type: 'application/vnd.ms-excel'});
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'dashboard_data.xls';
-            a.click();
-            window.URL.revokeObjectURL(url);
+            h += `</table><br><br>`;
+
+            /* Sheet 2 — Hourly breakdown */
+            h += `<h2>ข้อมูลรายชั่วโมง (Hourly Breakdown)</h2>
+<table><tr><th>ชั่วโมง</th>`;
+            MONTH_EN.forEach((m, i) => h += `<th>${MONTH_TH[i]} TSAT-TOBT</th>`);
+            MONTH_EN.forEach((m, i) => h += `<th>${MONTH_TH[i]} AOBT-TSAT</th>`);
+            MONTH_EN.forEach((m, i) => h += `<th>${MONTH_TH[i]} Taxi</th>`);
+            MONTH_EN.forEach((m, i) => h += `<th>${MONTH_TH[i]} จำนวน</th>`);
+            h += `</tr>`;
+            for (let hr = 0; hr < 24; hr++) {
+                h += `<tr><td>${hr.toString().padStart(2,'0')}:00</td>`;
+                MONTH_EN.forEach(m => h += `<td class="num">${DATA[m].hourly_tsat_tobt[hr].toFixed(2)}</td>`);
+                MONTH_EN.forEach(m => h += `<td class="num">${DATA[m].hourly_aobt_tsat[hr].toFixed(2)}</td>`);
+                MONTH_EN.forEach(m => h += `<td class="num">${DATA[m].hourly_atot_aobt[hr].toFixed(2)}</td>`);
+                MONTH_EN.forEach(m => h += `<td class="num">${DATA[m].hourly_count[hr]}</td>`);
+                h += `</tr>`;
+            }
+            h += `</table><br><br>`;
+
+            /* Sheet 3 — KPI Scores */
+            if (typeof KPI !== 'undefined') {
+                h += `<h2>A-CDM KPI Scores</h2>
+<table>
+<tr><th>เดือน</th><th>TSAT On-time Rate (%)</th><th>TSAT Compliance (%)</th><th>TOBT Accuracy (%)</th><th>Avg Taxi Time (นาที)</th></tr>`;
+                MONTH_EN.forEach((m, i) => {
+                    const k = KPI[m] || {};
+                    h += `<tr>
+  <td>${MONTH_TH[i]}</td>
+  <td class="num">${(k.tsat_ontime||0).toFixed(2)}</td>
+  <td class="num">${(k.tsat_compliance||0).toFixed(2)}</td>
+  <td class="num">${(k.tobt_accuracy||0).toFixed(2)}</td>
+  <td class="num">${(k.avg_taxi||0).toFixed(2)}</td>
+</tr>`;
+                });
+                h += `</table><br><br>`;
+            }
+
+            h += `</body></html>`;
+            triggerDownload(h, 'TOBT_TSAT_Dashboard.xls', 'application/vnd.ms-excel;charset=utf-8');
         }
 
         function printReport() {
