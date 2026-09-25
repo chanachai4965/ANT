@@ -16,6 +16,13 @@ nav{position:sticky;top:0;background:#0f2847;border-bottom:2px solid #6366f1;pad
 .nav-links a{color:#9ca3af;font-size:.9rem;transition:color .2s}
 .nav-links a:hover{color:#6366f1}
 
+/* Anchor offset for sticky nav */
+.kpi-section{scroll-margin-top:70px}
+.hero{scroll-margin-top:70px}
+
+/* Smooth scroll */
+html{scroll-behavior:smooth}
+
 /* Hero */
 .hero{background:linear-gradient(135deg,#1a3a5c,#0f2847);padding:2.5rem 2rem;text-align:center;border-bottom:2px solid #6366f1}
 .hero h1{font-size:2.2rem;color:#6366f1;margin-bottom:.4rem}
@@ -1675,6 +1682,22 @@ function switchHourly(btn, uid) {
   const target = document.getElementById('h_' + uid);
   if (target) target.style.display = 'block';
 }
+
+// Nav active highlight on scroll
+const navLinks = document.querySelectorAll('.nav-links a');
+const sections = ['s1','s2','s3','s4'].map(id => document.getElementById(id));
+function updateNav() {
+  let current = '';
+  sections.forEach(sec => {
+    if (sec && window.scrollY >= sec.offsetTop - 90) current = sec.id;
+  });
+  navLinks.forEach(a => {
+    a.style.color = a.getAttribute('href') === '#' + current ? '#6366f1' : '';
+    a.style.fontWeight = a.getAttribute('href') === '#' + current ? '700' : '';
+  });
+}
+window.addEventListener('scroll', updateNav, {passive: true});
+updateNav();
 
 // Close export menu when clicking outside
 document.addEventListener('click', e => {
